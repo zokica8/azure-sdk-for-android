@@ -26,7 +26,7 @@ import java.util.concurrent.ExecutionException;
 import java9.util.concurrent.CompletableFuture;
 
 import static com.azure.android.communication.chat.BuildConfig.LIBRARY_PACKAGE_NAME;
-import static com.azure.android.communication.chat.BuildConfig.VERSION_NAME;
+import static com.azure.android.communication.common.BuildConfig.VERSION_NAME;
 
 /**
  * Builder for creating clients of Azure Communication Service Chat
