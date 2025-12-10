@@ -153,11 +153,34 @@ public final class RegistrationKeyManager {
         }
     }
 
-    private int extractIndex(String alias) {
-        if (alias.indexOf(CRYPTO_KEY_PREFIX) == 0) {
-            return Integer.parseInt(alias.substring(alias.lastIndexOf('_') + 1));
+    /**
+     * Safely extract numeric index from an alias.
+     * Returns null for aliases that do not match expected ACS naming patterns
+     * or when suffix is not a valid integer (e.g. "AdalKey").
+     */
+    private Integer extractIndexOrNull(String alias) {
+        if (alias == null) {
+            return null;
         }
-        return Integer.parseInt(alias.substring(alias.lastIndexOf('_') + 1));
+
+        // We only attempt to parse aliases that start with our known prefixes.
+        // This avoids parsing foreign aliases such as "AdalKey".
+        if (alias.startsWith(CRYPTO_KEY_PREFIX) || alias.startsWith(AUTH_KEY_PREFIX)) {
+            int idxPos = alias.lastIndexOf('_');
+            if (idxPos >= 0 && idxPos + 1 < alias.length()) {
+                String suffix = alias.substring(idxPos + 1);
+                try {
+                    return Integer.parseInt(suffix);
+                } catch (NumberFormatException nfe) {
+                    // Non-numeric suffix — treat as not our alias
+                    return null;
+                }
+            }
+            return null;
+        }
+
+        // Non-ACS alias — skip it
+        return null;
     }
 
     // Clear keys created more than #{EXPIRATION_TIME_MINUTES} and keeps records consistent across key-store and key-creation-time-store
@@ -165,17 +188,31 @@ public final class RegistrationKeyManager {
         int removed = 0;
         HashSet<Integer> set = new HashSet<>();
         HashSet<Integer> removedSet = new HashSet<>();
+
         try {
             Enumeration<String> aliases = keyStore.aliases();
             while (aliases.hasMoreElements()) {
-                set.add(extractIndex(aliases.nextElement()));
+                String alias = aliases.nextElement();
+                Integer idx = extractIndexOrNull(alias);
+                if (idx != null) {
+                    set.add(idx);
+                } else {
+                    // optional: log non-ACS alias in debug, but do not throw
+                    clientLogger.info("Skipping non-ACS KeyStore alias during rotation: " + alias);
+                }
             }
         } catch (KeyStoreException e) {
             throw clientLogger.logExceptionAsError(new RuntimeException("Failed iterate key-store", e));
         }
         Set<String> aliases = keyMetaDataStore.getAliases();
         for (String alias : aliases) {
-            set.add(extractIndex(alias));
+            Integer idx = extractIndexOrNull(alias);
+            if (idx != null) {
+                set.add(idx);
+            } else {
+                // The metadata store contains a non-ACS alias — keep behavior safe by logging.
+                clientLogger.info("Skipping non-ACS metadata alias during rotation: " + alias);
+            }
         }
 
         //Delete expired keys or inconsistent records
